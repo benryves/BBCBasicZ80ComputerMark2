@@ -50,23 +50,54 @@ INIT:	CALL	INTIME		;INITIALISE TIMER
 ;REBOOT - Stop interrupts and return to CP/M. 
 ;
 REBOOT:	; TODO
+	; Restore the original ISR.
+	LD	HL,(OLDISR0)
+	LD	(39H),HL
 	RST	0
 ;
 ;INTIME - Initialise CTC to interrupt every 10 ms.
 ;Also set time to zero.
 ;
 INTIME:	DI
-	; TODO
+
+	; Patch the ISR.
+	DI
+	LD	HL,(39H)
+	LD	(OLDISR0),hl
+	LD	(OLDISR1),hl
+	LD	HL,ISR
+	LD	(39H),hl
+	
+	; Enable timer interrupts.
+	IN	A,(30H)
+	SET	6,A
+	OUT	(30H),A
+
+	; Reset timer.
 	LD	HL,0
 	LD	(TIME),HL
 	LD	(TIME+2),HL
 	EI
-	RETI
+	RET
 ;
 ;TIMER - Interrupt service routine.
 ;Increments elapsed-time clock 100 times per second.
 ;
-TIMER:	PUSH	AF
+ISR:	PUSH	AF
+
+	; Is it a timer interrupt?
+	IN	A,(31H)
+	BIT	6,A
+	JR	Z,TIMER
+	POP	AF
+DEFC	OLDISR0	=	$+1
+	JP	0
+
+TIMER:
+	; Acknowledge timer interrupt.
+	LD	A,40H
+	OUT	(31H),A
+	
 	PUSH	BC
 	PUSH	HL
 	LD	HL,TIME
@@ -78,8 +109,8 @@ UPT1:	INC	(HL)
 EXIT:	POP	HL
 	POP	BC
 	POP	AF
-	EI
-	RETI
+DEFC	OLDISR1	=	$+1
+	JP	0
 ;
 ;GTIME - Read elapsed-time clock.
 ;  Outputs: DEHL = elapsed time (centiseconds)
