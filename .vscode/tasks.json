@@ -1,0 +1,46 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "shell",
+			"label": "Make CP/M application",
+			"windows": {
+				"command": "wsl make"
+			},
+			"group": "build",
+			"problemMatcher": {
+				"owner": "z88dk-z80asm",
+				"pattern": [
+					{
+						"regexp": "^([A-Za-z0-9_\\.-]+?):(\\d+):\\s*(.+)$",
+						"file": 1,
+						"line": 2,
+						"message": 3
+					}
+				]
+			}
+		},
+		{
+			"type": "shell",
+			"label": "Run CP/M application",
+			"windows": {
+				"command": ".\\runapp.cmd"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": {
+				"owner": "z88dk-z80asm",
+				"pattern": [
+					{
+						"regexp": "^([A-Za-z0-9_\\.-]+?):(\\d+):\\s*(.+)$",
+						"file": 1,
+						"line": 2,
+						"message": 3
+					}
+				]
+			}
+		}
+	]
+}
