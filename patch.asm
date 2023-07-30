@@ -16,6 +16,7 @@
 ;R.T.RUSSELL, 04-02-1984
 ;
 BDOS	EQU	5
+C_WRITE	EQU	2
 COLD	EQU	200H
 ;
 	PUBLIC	CLRSCN
@@ -103,7 +104,10 @@ PTIME:	DI
 ;CLS - Clear screen.
 ; Destroys: A,D,E,H,L,F
 ;
-CLS:	; TODO
+CLS:	; VDU 12
+	LD	E,12
+	LD	C,C_WRITE
+	CALL	BDOS
 	RET
 ;
 ;INKEY - Sample keyboard with specified wait.
@@ -140,8 +144,18 @@ WAIT1:	CP	(HL)
 ; Destroys: A,D,E,H,L,F
 ;
 ;
-PCSR:
-	; TODO
+PCSR:	; VDU 31,x,y
+	PUSH	HL
+	PUSH	DE
+	LD	E,31
+	LD	C,C_WRITE
+	CALL	BDOS
+	POP	DE
+	LD	C,C_WRITE
+	CALL	BDOS
+	POP	DE
+	LD	C,C_WRITE
+	CALL	BDOS
 	RET
 ;
 ;GCSR - Return cursor coordinates.
