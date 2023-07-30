@@ -30,18 +30,6 @@ COLD	EQU	200H
 	SECTION	PATCH
 	ORG		100H
 ;
-;JUMP TABLE - BASIC makes calls to hardware-dependent
-;features via this table:
-;
-	JP	INIT
-CLRSCN:	JP	CLS		;CLEAR SCREEN
-PUTCSR:	JP	PCSR		;SET CURSOR POSN.
-GETCSR:	JP	GCSR		;READ CURSOR POSN.
-PUTIME:	JP	PTIME		;SET ELAPSED TIME
-GETIME:	JP	GTIME		;READ ELAPSED TIME
-GETKEY:	JP	INKEY		;READ KEY (TIME LIMIT)
-BYE:	JP	REBOOT		;RETURN TO CP/M
-;
 ;INIT - Perform hardware initialisation.
 ;
 INIT:	CALL	INTIME		;INITIALISE TIMER
@@ -49,10 +37,12 @@ INIT:	CALL	INTIME		;INITIALISE TIMER
 ;
 ;REBOOT - Stop interrupts and return to CP/M. 
 ;
-REBOOT:	; TODO
+BYE:
 	; Restore the original ISR.
+	DI
 	LD	HL,(OLDISR0)
 	LD	(39H),HL
+	EI
 	RST	0
 ;
 ;INTIME - Initialise CTC to interrupt every 10 ms.
@@ -116,38 +106,38 @@ DEFC	OLDISR1	=	$+1
 ;  Outputs: DEHL = elapsed time (centiseconds)
 ; Destroys: A,D,E,H,L,F
 ;
-GTIME:	DI
+GETIME:	DI
 	LD	HL,(TIME)
 	LD	DE,(TIME+2)
 	EI
 	RET
 ;
-;PTIME - Load elapsed-time clock.
+;PUTIME - Load elapsed-time clock.
 ;   Inputs: DEHL = time to load (centiseconds)
 ; Destroys: A,D,E,H,L,F
 ;
-PTIME:	DI
+PUTIME:	DI
 	LD	(TIME),HL
 	LD	(TIME+2),DE
 	EI
 	RET
 ;
-;CLS - Clear screen.
+;CLRSCN - Clear screen.
 ; Destroys: A,D,E,H,L,F
 ;
-CLS:	; VDU 12
+CLRSCN:	; VDU 12
 	LD	E,12
 	LD	C,C_WRITE
 	CALL	BDOS
 	RET
 ;
-;INKEY - Sample keyboard with specified wait.
+;GETKEY - Sample keyboard with specified wait.
 ;   Inputs: HL = Time to wait (centiseconds)
 ;  Outputs: Carry reset indicates time-out.
 ;           If carry set, A = character typed.
 ; Destroys: A,D,E,H,L,F
 ;
-INKEY:	PUSH	BC
+GETKEY:	PUSH	BC
 	PUSH	HL
 	LD	C,6
 	LD	E,0FFH
@@ -167,15 +157,15 @@ WAIT1:	CP	(HL)
 	JR	Z,WAIT1		;WAIT FOR 10 ms.
 	POP	HL
 	DEC	HL
-	JR	INKEY
+	JR	GETKEY
 ;
-;PCSR - Move cursor to specified position.
+;PUTCSR - Move cursor to specified position.
 ;   Inputs: DE = horizontal position (LHS=0)
 ;           HL = vertical position (TOP=0)
 ; Destroys: A,D,E,H,L,F
 ;
 ;
-PCSR:	; VDU 31,x,y
+PUTCSR:	; VDU 31,x,y
 	PUSH	HL
 	PUSH	DE
 	LD	E,31
@@ -189,12 +179,12 @@ PCSR:	; VDU 31,x,y
 	CALL	BDOS
 	RET
 ;
-;GCSR - Return cursor coordinates.
+;GETCSR - Return cursor coordinates.
 ;   Outputs:  DE = X coordinate (POS)
 ;             HL = Y coordinate (VPOS)
 ;  Destroys: A,D,E,H,L,F
 ;
-GCSR:
+GETCSR:
 	; TODO
 	LD	HL,0
 	LD	DE,0
