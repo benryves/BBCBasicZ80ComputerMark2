@@ -30,6 +30,11 @@
 ;
 	EXTERN	BYE
 	EXTERN	GETKEY
+	EXTERN	OSBYTE
+	EXTERN	OSWORD
+	EXTERN	OSNEWL
+	EXTERN	OSASCI
+	EXTERN	VDU
 ;
 	EXTERN	ESCAPE
 	EXTERN	EXTERR
@@ -173,7 +178,7 @@ LOAD1:	POP	BC
 	CALL	CLOSE
 	POP	AF
 	CCF
-OSCALL:	RET
+	RET
 ;
 ;OSOPEN - Open a file for reading or writing.
 ;   Inputs: HL addresses filename (term CR)
@@ -731,6 +736,64 @@ HEX2:	AND	0FH
 	INC	HL
 	JR	HEX1
 ;
+; DEC - Read a decimal string and convert to binary.
+;   Inputs: HL = text pointer
+;  Outputs: HL = updated text pointer
+;           DE = value
+;            A = terminator (spaces skipped)
+; Destroys: A,D,E,H,L,F
+;
+DEC:
+	LD	DE,0
+	CALL	SKIPSP
+	LD	A,(HL)
+	OR	A
+	JP	Z,HUH
+	CP	CR
+	JP	Z,HUH
+	CP	' '
+	JP	Z,HUH
+	CP	','
+	JP	Z,HUH
+DEC1:
+	LD	A,(HL)
+	OR	A
+	RET	Z
+	CP	CR
+	RET	Z
+	CP	' '
+	RET	Z
+	CP	','
+	RET	Z
+	; Parse the value.
+	CP	'0'
+	JP	C,HUH
+	CP	'9'+1
+	JP	NC,HUH
+	SUB	'0'
+	INC	HL
+	EX	DE,HL
+	PUSH	BC
+	; Multiply existing value by 10.
+	ADD	HL,HL
+	JP	C,HUH
+	LD	C,L
+	LD	B,H
+	ADD	HL,HL
+	JP	C,HUH
+	ADD	HL,HL
+	JP	C,HUH
+	ADD	HL,BC
+	JP	C,HUH
+	; Add the parsed value.
+	LD	B,0
+	LD	C,A
+	ADD	HL,BC
+	JP	C,HUH	
+	EX	DE,HL
+	POP	BC
+	JR	DEC1
+;
 ;OSCLI - Process an "operating system" command
 ;
 OSCLI:	CALL	SKIPSP
@@ -977,6 +1040,72 @@ ESCC1:	CALL	HEX
 	SET	6,(HL)		;DISABLE ESCAPE
 	RET
 ;
+;*TV COMMAND
+;
+TV:
+	LD	DE,0
+	LD	(FXHL),DE
+	LD	A,144
+	LD	(FXA),A
+	JR	FXTV
+;
+;*FX COMMAND
+;
+FX:
+	; Clear HL
+	LD	DE,0
+	LD	(FXHL),DE
+	; Get first argument.
+	CALL	DEC
+	LD	A,E
+	LD	(FXA),A
+	LD	A,D
+	OR	A
+	JP	NZ,HUH
+FXTV:
+	; Is there a second argument?
+	CALL	SKIPSP
+	OR	A
+	JR	Z,FXDONE
+	CP	CR
+	JR	Z,FXDONE
+	CP	','
+	JR	NZ,FX1
+	INC	HL
+FX1:
+	CALL	DEC
+	LD	(FXHL),DE
+	LD	A,D
+	OR	A
+	JP	NZ,HUH
+	; Is there a third argument?
+	CALL	SKIPSP
+	OR	A
+	JR	Z,FXDONE
+	CP	CR
+	JR	Z,FXDONE
+	CP	','
+	JR	NZ,FX2
+	INC	HL
+FX2:
+	CALL	DEC
+	LD	A,E
+	LD	(FXHL+1),A
+	LD	A,D
+	OR	A
+	JP	NZ,HUH
+	; Have we reached the end?
+	CALL	SKIPSP
+	OR	A
+	JR	Z,FXDONE
+	CP	CR
+	JP	NZ,HUH
+FXDONE:
+DEFC	FXA	=	$+1
+	LD	A,0
+DEFC	FXHL	=	$+1
+	LD	HL,0
+	JP	OSBYTE
 ;
 COMDS:	DEFM	"BY"
 	DEFB	'E'+80H
@@ -1002,6 +1131,9 @@ COMDS:	DEFM	"BY"
 	DEFM	"EXE"
 	DEFB	'C'+80H
 	DEFW	EXEC
+	DEFM	"F"
+	DEFB	'X'+80H
+	DEFW	FX
 	DEFM	"LOA"
 	DEFB	'D'+80H
 	DEFW	STLOAD
@@ -1026,7 +1158,80 @@ COMDS:	DEFM	"BY"
 	DEFM	"TYP"
 	DEFB	'E'+80H
 	DEFW	TYPE
+	DEFM	"T"
+	DEFB	'V'+80H
+	DEFW	TV
 	DEFB	0FFH
+;
+;OSCALL - Intercept a CALL or USR to &FFxx
+;   Inputs: IY contains destination address of CALL or USR (=&FFxx)
+;           IX addresses "static" variables, i.e. A%=(IX+4), X%=(IX+96) etc.
+;           (SP+2) = "return address" if interception carried out
+;  Outputs: (USR only) HLH'L' contains 32-bit integer result
+; Destroys: Everything
+;
+OSCALL:
+	LD	A,IYL
+	LD	HL,OSCALLS
+	LD	B,OSCALLC
+OSCALLQ:	; Query list of OSCALLS
+	CP	(HL)
+	JR	Z,OSCALLF
+	INC	HL
+	INC	HL
+	INC	HL
+	DJNZ	OSCALLQ
+	RET
+OSCALLF:	; Found the OSCALL
+	POP	DE	; Discard return address
+	INC	HL
+	LD	E,(HL)
+	INC	HL
+	LD	D,(HL)
+	LD	(OSCALLA),DE
+	; Load parameters
+	LD	A,(IX+4)
+	LD	L,(IX+96)
+	LD	H,(IX+100)
+DEFC	OSCALLA	=	$+1
+	CALL	0
+	; Return result FHLA in HLH'L'
+	LD	B,A
+	LD	A,H
+	PUSH	AF
+	LD	A,B
+	PUSH	HL
+	EXX
+	POP	HL
+	LD	H,L
+	LD	L,A
+	EXX
+	POP	HL
+	LD	A,H
+	LD	H,L
+	LD	L,A
+	RET
+OSCALLS:
+	DEFB 0EEH
+	DEFW OSWRCH
+	DEFB 0CBH
+	DEFW OSWRCH
+	DEFB 0E0H
+	DEFW OSRDCH
+	DEFB 0C8H
+	DEFW OSRDCH
+	DEFB 0E7H
+	DEFW OSNEWL
+	DEFB 0E3H
+	DEFW OSASCI
+	DEFB 0BCH
+	DEFW VDU
+	DEFB 0F4H
+	DEFW OSBYTE
+	DEFB 0F1H
+	DEFW OSWORD
+DEFC	OSCALLC	= [$-OSCALLS]/3
+;
 ;
 ;PTEXT - Print text
 ;   Inputs: HL = address of text
