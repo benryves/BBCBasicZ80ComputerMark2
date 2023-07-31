@@ -16,7 +16,6 @@
 ;R.T.RUSSELL, 04-02-1984
 ;
 BDOS	EQU	5
-C_WRITE	EQU	2
 ;
 	EXTERN	START
 	EXTERN	EXPRI
@@ -44,6 +43,10 @@ C_WRITE	EQU	2
 ;INIT - Perform hardware initialisation.
 ;
 INIT:	CALL	INTIME		;INITIALISE TIMER
+	LD	HL,(0001H)
+	LD	DE,3*(4-1) ; CONOUT = function 4.
+	ADD	HL,DE
+	LD	(VDU+1),HL
 	JP	START
 ;
 ;REBOOT - Stop interrupts and return to CP/M. 
@@ -65,6 +68,9 @@ BYE:
 
 	EI
 	RST	0
+;
+VDU: ; Raw output via CONOUT address retrieved from BIOS jump table
+	JP 0
 ;
 ;INTIME - Initialise CTC to interrupt every 10 ms.
 ;Also set time to zero.
@@ -146,10 +152,8 @@ PUTIME:	DI
 ; Destroys: A,D,E,H,L,F
 ;
 CLRSCN:	; VDU 12
-	LD	E,12
-	LD	C,C_WRITE
-	CALL	BDOS
-	RET
+	LD	C,12
+	JP	VDU
 ;
 ;GETKEY - Sample keyboard with specified wait.
 ;   Inputs: HL = Time to wait (centiseconds)
@@ -188,16 +192,12 @@ WAIT1:	CP	(HL)
 PUTCSR:	; VDU 31,x,y
 	PUSH	HL
 	PUSH	DE
-	LD	E,31
-	LD	C,C_WRITE
-	CALL	BDOS
-	POP	DE
-	LD	C,C_WRITE
-	CALL	BDOS
-	POP	DE
-	LD	C,C_WRITE
-	CALL	BDOS
-	RET
+	LD	C,31
+	CALL	VDU
+	POP	BC
+	CALL	VDU
+	POP	BC
+	JP	VDU
 ;
 ;GETCSR - Return cursor coordinates.
 ;   Outputs:  DE = X coordinate (POS)
@@ -211,9 +211,8 @@ GETCSR:
 	RET
 ;
 CLG:	; VDU 16
-	LD	E,16
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	C,16
+	CALL	VDU
 	JP	XEQ
 ;
 COLOUR:	; VDU 17,c
@@ -221,19 +220,17 @@ COLOUR:	; VDU 17,c
 	EXX
 	PUSH HL
 	
-	LD	E,17
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	C,17
+	CALL	VDU
 	
-	POP	DE
-	LD	C,C_WRITE
-	CALL	BDOS
+	POP	BC
+	CALL	VDU
 	
 	JP	XEQ
 ;
 DRAW:	; VDU 25,5,x;y;
-	LD	DE,5
-	LD	(PLOTK),DE
+	LD	BC,5
+	LD	(PLOTK),BC
 	JP	PLOTXY
 ;
 GCOL:	; VDU 18,m,c
@@ -247,19 +244,16 @@ GCOL:	; VDU 18,m,c
 	EXX
 	LD	(GCOLC),HL
 	
-	LD	E,18
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	C,18
+	CALL	VDU
 	
 DEFC	GCOLM	=	$+1
-	LD	DE,0
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	BC,0
+	CALL	VDU
 
 DEFC	GCOLC	=	$+1
-	LD	DE,0
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	BC,0
+	CALL	VDU
 
 	JP	XEQ
 ;
@@ -268,19 +262,17 @@ MODE:	; VDU 22,m
 	EXX
 	PUSH	HL
 	
-	LD	E,22
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	C,22
+	CALL	VDU
 	
-	POP	DE
-	LD	C,C_WRITE
-	CALL	BDOS
+	POP	BC
+	CALL	VDU
 	
 	JP	XEQ
 ;
 MOVE:	; VDU 25,4,x;y;
-	LD	DE,4
-	LD	(PLOTK),DE
+	LD	BC,4
+	LD	(PLOTK),BC
 	JP	PLOTXY
 ;
 PLOT:	; VDU 25,k,x;y;
@@ -299,32 +291,26 @@ PLOTXY:
 	EXX
 	LD	(PLOTY),HL
 	
-	LD	E,25
-	LD	C,C_WRITE
-	CALL	BDOS	
+	LD	C,25
+	CALL	VDU
 
 DEFC	PLOTK	=	$+1
-	LD	DE,0
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	BC,0
+	CALL	VDU
 
 DEFC	PLOTX	=	$+1
-	LD	DE,0
-	LD	C,C_WRITE
-	CALL	BDOS
-	LD	DE,(PLOTX)
-	LD	E,D
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	BC,0
+	CALL	VDU
+	LD	BC,(PLOTX)
+	LD	C,B
+	CALL	VDU
 
 DEFC	PLOTY	=	$+1
-	LD	DE,0
-	LD	C,C_WRITE
-	CALL	BDOS
-	LD	DE,(PLOTY)
-	LD	E,D
-	LD	C,C_WRITE
-	CALL	BDOS
+	LD	BC,0
+	CALL	VDU
+	LD	BC,(PLOTY)
+	LD	C,B
+	CALL	VDU
 	
 	JP	XEQ
 ;
