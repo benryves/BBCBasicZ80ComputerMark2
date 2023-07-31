@@ -53,6 +53,16 @@ BYE:
 	DI
 	LD	HL,(OLDISR0)
 	LD	(39H),HL
+
+	; Disable timer interrupts.
+	IN	A,(30H)
+	RES	6,A
+	OUT	(30H),A
+	
+	; Acknowledge any outstanding interrupts just in case.
+	LD	A,40H
+	OUT	(31H),A
+
 	EI
 	RST	0
 ;
@@ -62,7 +72,6 @@ BYE:
 INTIME:	DI
 
 	; Patch the ISR.
-	DI
 	LD	HL,(39H)
 	LD	(OLDISR0),hl
 	LD	(OLDISR1),hl
