@@ -171,7 +171,10 @@ CLRSCN:	; VDU 12
 ;           If carry set, A = character typed.
 ; Destroys: A,D,E,H,L,F
 ;
-GETKEY:	PUSH	BC
+GETKEY:
+	BIT	7,H
+	JR	NZ,GETKEYN
+	PUSH	BC
 	PUSH	HL
 	LD	C,6
 	LD	E,0FFH
@@ -192,6 +195,11 @@ WAIT1:	CP	(HL)
 	POP	HL
 	DEC	HL
 	JR	GETKEY
+GETKEYN:
+	; Negative GETKEY, return FALSE
+	XOR	A
+	SCF
+	RET
 ;
 ;PUTCSR - Move cursor to specified position.
 ;   Inputs: DE = horizontal position (LHS=0)
