@@ -1378,7 +1378,9 @@ EXECIN:	PUSH	BC		;SAVE REGISTERS
 ;           If carry set A = character
 ; Destroys: A,H,L,F
 ;
-OSKEY:	PUSH	HL
+OSKEY:	BIT	7,H
+	JR	NZ,OSKEYN
+	PUSH	HL
 	LD	HL,INKEY
 	LD	A,(HL)
 	LD	(HL),0
@@ -1386,6 +1388,7 @@ OSKEY:	PUSH	HL
 	OR	A
 	SCF
 	RET	NZ
+OSKEYN:
 	PUSH	DE
 	CALL	GETKEY
 	POP	DE
