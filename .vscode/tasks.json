@@ -27,7 +27,7 @@
 				"command": ".\\runapp.cmd"
 			},
 			"group": {
-				"kind": "build",
+				"kind": "test",
 				"isDefault": true
 			},
 			"problemMatcher": {
