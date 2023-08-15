@@ -198,8 +198,12 @@ WAIT1:	CP	(HL)
 	JR	GETKEY
 GETKEYN:
 	; Negative GETKEY, return FALSE
-	XOR	A
-	SCF
+	LD	A,129
+	CALL	OSBYTE
+	LD	A,L
+	OR	A
+	RET	NZ
+	CCF
 	RET
 ;
 ;PUTCSR - Move cursor to specified position.
