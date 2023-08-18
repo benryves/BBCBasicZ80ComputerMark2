@@ -16,6 +16,9 @@
 ;R.T.RUSSELL, 04-02-1984
 ;
 BDOS	EQU	5
+S_SYSVAR	EQU	49
+CONW	EQU	1Ah
+CONH	EQU	1Ch
 ;
 	EXTERN	START
 	EXTERN	EXPRI
@@ -25,6 +28,7 @@ BDOS	EQU	5
 	EXTERN	OSWRCH
 	EXTERN	TRAP
 	EXTERN	OSKEY
+	EXTERN	KEYB
 ;
 	PUBLIC	CLRSCN
 	PUBLIC	PUTCSR
@@ -59,6 +63,7 @@ INIT:	CALL	INTIME		;INITIALISE TIMER
 	LD	DE,3*(4-1) ; CONOUT = function 4.
 	ADD	HL,DE
 	LD	(VDU+1),HL
+	CALL	MODECHG
 	JP	START
 ;
 ;REBOOT - Stop interrupts and return to CP/M. 
@@ -198,7 +203,7 @@ WAIT1:	CP	(HL)
 	DEC	HL
 	JR	GETKEY
 GETKEYN:
-	; Negative GETKEY, return FALSE
+	; Negative GETKEY, use OSBYTE
 	LD	A,129
 	CALL	OSBYTE
 	LD	A,L
@@ -364,7 +369,50 @@ MODE:	; VDU 22,m
 	POP	BC
 	CALL	VDU
 	
+	CALL	MODECHG
+	
 	JP	XEQ
+;
+MODECHG:
+	; Fetch the current mode.
+	LD	A,135
+	CALL	OSBYTE
+	LD	A,H
+	AND	7
+	ADD	A,A
+	LD	L,A
+	LD	H,0
+	LD	DE,MODESIZES
+	ADD	HL,DE
+	
+	; Set screen width in KEYB settings.
+	LD	A,(HL)
+	LD	(KEYB-12),A
+	
+	; Write console width -1 to SCB.
+	PUSH	HL
+	DEC	A
+	LD	B,CONW
+	CALL	WRITESCB
+	
+	; Write console height -1 to SCB.
+	POP	HL
+	INC	HL
+	LD	A,(HL)
+	DEC	A
+	LD	B,CONH
+	CALL	WRITESCB
+	
+	RET
+MODESIZES:
+	DEFB	80, 32 ; 0
+	DEFB	40, 32 ; 1
+	DEFB	20, 32 ; 2
+	DEFB	80, 25 ; 3
+	DEFB	40, 32 ; 4
+	DEFB	20, 32 ; 5
+	DEFB	40, 25 ; 6
+	DEFB	40, 25 ; 7
 ;
 MOVE:	; VDU 25,4,x;y;
 	LD	BC,4
@@ -586,3 +634,20 @@ OSWORD:
 	RET
 ;
 TIME:	DEFS	4
+;
+; WRITESCB: Write CP/M system control block.
+WRITESCB:
+	LD	(SCBCONDATA),A
+	LD	A,B
+	LD	(SCBCONOFF),A
+	LD	C,S_SYSVAR
+	LD	DE,SCBCON
+	JP	BDOS
+;
+SCBCON:
+SCBCONOFF:
+	DEFB	0
+SCBCONCMD:
+	DEFB	$FF
+SCBCONDATA:
+	DEFW	0
