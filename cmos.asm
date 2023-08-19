@@ -756,6 +756,10 @@ DEC:
 	JP	Z,HUH
 	CP	','
 	JP	Z,HUH
+	CP	'&'
+	JR	NZ,DEC1
+	INC	HL
+	JR	HEX1
 DEC1:
 	LD	A,(HL)
 	OR	A
