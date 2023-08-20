@@ -29,6 +29,7 @@
 	PUBLIC	OSCALL
 	PUBLIC	KEYB
 	PUBLIC	GETIMS
+	PUBLIC	PUTIMS
 ;
 	EXTERN	BYE
 	EXTERN	GETKEY
@@ -1716,7 +1717,8 @@ GETIMS:
 	LD	DE,SYSDATE
 	CALL	BDOS
 	LD	(SYSTIMES),A
-	
+
+SYSDATETOSTR:
 	; Calculate the day of week
 	LD	HL,(SYSDATE)
 	CALL	DAYSTOWKDAY
@@ -1802,7 +1804,60 @@ GETIMSDT1:
 	LD	(DE),A
 	
 	RET
+;
+;PUTIMS - Update the real-time clock.
+;This routine is called by BASIC when TIME$ is used as a statement.
+;   Inputs: Time string stored in string accumulator
+;           DE addresses byte following last byte of string
+;           (i.e. E = string length)
+; Destroys: A,D,E,H,L,F
+;
+PUTIMS:
+	LD	A,CR
+	LD	(DE),A
+	LD	HL,ACCS
+	CALL	DEC
+	
+	LD	A,D
+	OR	A
+	JP	NZ,HUH
+	LD	A,E
+	LD	(DATED),A
+	
+	CALL	DEC
+	LD	A,D
+	OR	A
+	JP	NZ,HUH
+	LD	A,E
+	LD	(DATEM),A
+	
+	CALL	DEC
+	LD	(DATEY),DE
+	
+	; Convert the YMD parameters to a date
+	CALL	YMDTODAYS
+	JP	C,HUH
+	
+	; Store the date
+	LD	(SYSDATE),HL
+	
+	; Convert back to a string
+	CALL	SYSDATETOSTR
+	
+	LD	B,E
+	LD	HL,ACCS
+	CALL	PTEXT
+	CALL	CRLF
+	
+	RET
 
+;
+;APPENDBCD - Appends a number in BCD form to an ASCII string.
+;   Inputs: A = Value to append
+;           DE points to string to append to
+;  Outputs: DE addresses byte following last byte of string.
+; Destroys: A,F
+;
 APPENDBCD:
 	PUSH	AF
 	SRL	A
@@ -1834,7 +1889,12 @@ SYSTIMEM:
 	DEFB	0	; Minutes (BCD)
 SYSTIMES:
 	DEFB	0	; Seconds (BCD)
-
+;
+;DAYSTOWKDAY - Converts a date (days since epoch) into the day of the week string.
+;   Inputs: HL = Date to convert
+;  Outputs: DE points to 3-character string representing the day of the week.
+; Destroys: A,H,L,F
+;
 DAYSTOWKDAY:
 	LD	DE,7000
 	CALL	DAYSTOWKDAYCALC
@@ -1854,17 +1914,23 @@ DAYSTOWKDAY:
 	LD	DE,DAYNAMES
 	ADD	HL,DE
 	RET
-	
 DAYSTOWKDAYCALC:
 	OR	A
 DAYSTOWKDAYLOOP:
 	SBC	HL,DE
-	JR	Z,DAYSTOWKDAYEXIT
+	RET	Z
 	JR	NC,DAYSTOWKDAYLOOP
 DAYSTOWKDAYEXIT:
 	ADD	HL,DE
 	RET
-
+;
+;DAYSTOYMD - Converts a date (days since epoch) into year/month/day components.
+;   Inputs: HL = Date to convert
+;  Outputs: DATEY = Years
+;           DATEM = Months (1-12)
+;           DATED = Days (1-31)
+; Destroys: A,D,E,H,L,F
+;
 DAYSTOYMD:
 	; Special case for day 0 (1977/12/31)
 	LD	A,H
@@ -1878,26 +1944,7 @@ DAYSTOYMD:
 	LD	(DATED),A
 	RET
 DAYSTOYMD1:
-	; All other dates are counted from 1978/01/01
-	LD	DE,1978
-	LD	(DATEY),DE
-	LD	A,1
-	LD	(DATEM),A
-	LD	(DATED),A
-	
-	; 1978 was not a leap year
-	LD	DE,365
-	LD	(DATEYLEN),DE
-	LD	A,28
-	LD	(MONTHLENS+1),A
-	XOR	A
-	LD	(DATEYLEAP),A
-	; Next leap year in two years
-	LD	A,2
-	LD	(DATELEAPCNT),A
-	; Next century in 31 leap years (skip 2000)
-	LD	A,31
-	LD	(DATECENTCNT),A
+	CALL	DATECNTRES
 	
 	; Count the years
 	LD	DE,(DATEYLEN)
@@ -1927,7 +1974,113 @@ DAYSTOYMD5:
 	LD	A,L
 	LD	(DATED),A
 	RET
+;
+;YMDTODAYS - Converts year/month/day components into a numeric date (days since epoch).
+;   Inputs: DATEY = Years
+;           DATEM = Months (1-12)
+;           DATED = Days (1-31)
+;  Outputs: HL = Converted date
+; Destroys: DATEY, DATEM, A,D,E,H,L,F
+;
+YMDTODAYS:
+	; How many years will we need to count up by?
+	LD	HL,(DATEY)
+	LD	DE,1978
+	OR	A
+	SBC	HL,DE
+	RET	C ; Out of range
+	LD	A,H
+	OR	A
+	SCF
+	RET	NZ ; Also out of range
+	LD	(DATEY),HL ; Store away for future reference
+	
+	; Are months in range?
+	LD	A,(DATEM)
+	OR	A
+	SCF
+	RET	Z	; 0 = out of range
+	CP	13	; Should carry
+	CCF
+	RET	C	; Out of range
+	
+	; This is enough to start working with.
+	LD	B,A
+	LD	A,(DATED)
+	PUSH	AF	; Store day target
+	PUSH	BC  ; Store month target
+	LD	HL,(DATEY)
+	PUSH	HL	; Store year counter
+	
+	; Reset date counter
+	CALL	DATECNTRES
+	
+	POP	HL	; Retrieve year counter
+	LD	A,H
+	OR	L
+	LD	B,L
+	LD	HL,1
+	
+	; Count up years
+	JR	Z,YMDTODAYS2
+YMDTODAYS1:
+	LD	DE,(DATEYLEN)
+	ADD	HL,DE
+	CALL	ADVYEAR
+	DJNZ	YMDTODAYS1
+YMDTODAYS2:
 
+	; Count up months
+	POP	BC
+	DEC	B
+	JR	Z,YMDTODAYS4
+YMDTODAYS3:
+	LD	DE,(DATEMLEN)
+	LD	D,0
+	ADD	HL,DE
+	CALL	ADVMONTH
+	DJNZ	YMDTODAYS3
+YMDTODAYS4:
+	
+	; Count up days
+	POP	BC
+	DEC	B
+	JR	Z,YMDTODAYS6
+	LD	A,(DATEMLEN)
+	DEC	A
+	CP	B
+	RET	C	; Out of range
+	LD	E,B
+	ADD	HL,DE
+YMDTODAYS6:
+	OR	A
+	RET
+;
+; Reset the date counters to day 1 (1/1/1978)
+DATECNTRES:
+	; All other dates are counted from 1978/01/01
+	LD	DE,1978
+	LD	(DATEY),DE
+	LD	A,1
+	LD	(DATEM),A
+	LD	(DATED),A
+	
+	; 1978 was not a leap year
+	LD	DE,365
+	LD	(DATEYLEN),DE
+	LD	A,28
+	LD	(MONTHLENS+1),A
+	XOR	A
+	LD	(DATEYLEAP),A
+	; Next leap year in two years
+	LD	A,2
+	LD	(DATELEAPCNT),A
+	; Next century in 31 leap years (skip 2000)
+	LD	A,31
+	LD	(DATECENTCNT),A
+	RET
+;
+; Advance the year counter
 ADVYEAR:
 	LD	DE,(DATEY)
 	INC	DE
@@ -1962,7 +2115,8 @@ ADVYEARCENT:
 	LD	(DATECENTCNT),A
 	LD	DE,365
 	RET
-
+;
+; Advance the month counter
 ADVMONTH:
 	LD	A,(DATEM)
 	INC	A
@@ -1973,7 +2127,6 @@ ADVMONTH:
 ADVMONTH1:
 	LD	(DATEM),A
 	; Fall-through
-
 GETMONTHLENGTH:
 	PUSH	HL
 	LD	A,(DATEM)
