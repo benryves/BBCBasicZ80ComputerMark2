@@ -1841,7 +1841,27 @@ PUTIMS:
 	; Store the date
 	LD	(SYSDATE),HL
 	
-	; Convert back to a string
+	; Display the date number
+	LD	DE,ACCS
+	LD	HL,0
+	EXX
+	LD	HL,(SYSDATE)
+	EXX
+	LD	C,0
+	LD	A,37
+	PUSH	IX
+	LD	IX,G9-1
+	CALL	FPP
+	POP	IX
+	
+	LD	B,E
+	LD	HL,ACCS
+	CALL	PTEXT
+	
+	LD	A,'='
+	CALL	OSWRCH
+	
+	; Convert system date back to a string
 	CALL	SYSDATETOSTR
 	
 	LD	B,E
