@@ -2065,15 +2065,13 @@ YMDTODAYS4:
 	; Count up days
 	POP	BC
 	DEC	B
-	JR	Z,YMDTODAYS6
 	LD	A,(DATEMLEN)
 	DEC	A
 	CP	B
 	RET	C	; Out of range
 	LD	E,B
+	LD	D,0
 	ADD	HL,DE
-YMDTODAYS6:
-	OR	A
 	RET
 ;
 ; Reset the date counters to day 1 (1/1/1978)
@@ -2098,6 +2096,8 @@ DATECNTRES:
 	; Next century in 31 leap years (skip 2000)
 	LD	A,31
 	LD	(DATECENTCNT),A
+	; January also has 31 days
+	LD	(DATEMLEN),A
 	RET
 ;
 ; Advance the year counter
