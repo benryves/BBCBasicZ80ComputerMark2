@@ -28,6 +28,7 @@
 	PUBLIC	OSKEY
 	PUBLIC	OSCALL
 	PUBLIC	KEYB
+	PUBLIC	GETIMS
 ;
 	EXTERN	BYE
 	EXTERN	GETKEY
@@ -48,6 +49,7 @@
 	EXTERN	HIMEM
 	EXTERN	ERRLIN
 	EXTERN	USER
+	EXTERN	FPP
 ;
 	SECTION	CODE
 ;
@@ -1699,3 +1701,308 @@ INILEN	EQU	$-TABLE
 	DEFB	'G' & 1FH	;DELETE CHARACTER
 	DEFB	'I' & 1FH	;INSERT CHARACTER
 KEYB:
+;
+;GETIMS - Read the real-time clock.
+;This routine is called by BASIC when TIME$ is used as a function.
+;  Outputs: Time string stored in string accumulator
+;           DE addresses byte following last byte of string
+;           (i.e. E = string length)
+;Destroys: A,D,E,H,L,F
+;
+GETIMS:
+
+	; Fetch the date and time
+	LD	C,105
+	LD	DE,SYSDATE
+	CALL	BDOS
+	LD	(SYSTIMES),A
+	
+	; Calculate the day of week
+	LD	HL,(SYSDATE)
+	CALL	DAYSTOWKDAY
+	LD	DE,ACCS
+	LD	BC,3
+	LDIR
+	LD	A,','
+	LD	(DE),A
+	
+	
+	; Convert the date to Y/M/D
+	LD	HL,(SYSDATE)
+	CALL	DAYSTOYMD
+	
+	LD	DE,ACCS+4
+	
+	; Start with the day of the month
+	EX	DE,HL
+	LD	(HL),'0'
+	LD	A,(DATED)
+	CP	10
+	JR	C,GETIMSDT1
+GETIMSDT0:
+	SUB	10
+	INC	(HL)
+	CP	10
+	JR	NC,GETIMSDT0
+GETIMSDT1:
+	INC	HL
+	ADD	A,'0'
+	LD	(HL),A
+	INC	HL
+	LD	(HL),' '
+	INC	HL
+	EX	DE,HL
+	
+	; Append the month name
+	LD	A,(DATEM)
+	DEC	A
+	LD	C,A
+	ADD	A,A
+	ADD	A,C
+	LD	C,A
+	LD	B,0
+	LD	HL,MONTHNAMES
+	ADD	HL,BC
+	LD	BC,3
+	LDIR
+	LD	A,' '
+	LD	(DE),A
+	INC	DE
+	
+	; Append the year
+	LD	HL,0
+	EXX
+	LD	HL,(DATEY)
+	EXX
+	LD	C,0
+	LD	A,37
+	PUSH	IX
+	LD	IX,G9-1
+	CALL	FPP
+	POP	IX
+	
+	LD	A,'.'
+	LD	(DE),A
+	INC	DE
+	
+	LD	A,(SYSTIMEH)
+	CALL	APPENDBCD
+	LD	A,':'
+	LD	(DE),A
+	INC	DE
+	LD	A,(SYSTIMEM)
+	CALL	APPENDBCD
+	LD	A,':'
+	LD	(DE),A
+	INC	DE
+	LD	A,(SYSTIMES)
+	CALL	APPENDBCD
+	
+	XOR	A
+	LD	(DE),A
+	
+	RET
+
+APPENDBCD:
+	PUSH	AF
+	SRL	A
+	SRL	A
+	SRL	A
+	SRL	A
+	CALL	APPENDBCD1
+	POP AF
+APPENDBCD1:
+	AND	0Fh
+	ADD	A,'0'
+	LD	(DE),A
+	INC	DE
+	RET
+
+DAYNAMES:
+	DEFM	"SatSunMonTueWedThuFri"
+
+MONTHNAMES:
+	DEFM	"JanFebMarAprMayJunJulAugSepOctNovDec"
+
+G9:	DEFW	9
+
+SYSDATE:
+	DEFW	0	; Date
+SYSTIMEH:
+	DEFB	0	; Hours (BCD)
+SYSTIMEM:
+	DEFB	0	; Minutes (BCD)
+SYSTIMES:
+	DEFB	0	; Seconds (BCD)
+
+DAYSTOWKDAY:
+	LD	DE,7000
+	CALL	DAYSTOWKDAYCALC
+	LD	DE,700
+	CALL	DAYSTOWKDAYCALC
+	LD	DE,70
+	CALL	DAYSTOWKDAYCALC
+	LD	DE,7
+	CALL	DAYSTOWKDAYCALC
+	LD	A,L
+	LD	H,A
+	ADD	A,A
+	ADD	A,L
+	LD	L,A
+	LD	A,H
+	LD	H,0
+	LD	DE,DAYNAMES
+	ADD	HL,DE
+	RET
+	
+DAYSTOWKDAYCALC:
+	OR	A
+DAYSTOWKDAYLOOP:
+	SBC	HL,DE
+	JR	Z,DAYSTOWKDAYEXIT
+	JR	NC,DAYSTOWKDAYLOOP
+DAYSTOWKDAYEXIT:
+	ADD	HL,DE
+	RET
+
+DAYSTOYMD:
+	; Special case for day 0 (1977/12/31)
+	LD	A,H
+	OR	L
+	JR	NZ,DAYSTOYMD1
+	LD	HL,1977
+	LD	(DATEY),HL
+	LD	A,12
+	LD	(DATEM),A
+	LD	A,31
+	LD	(DATED),A
+	RET
+DAYSTOYMD1:
+	; All other dates are counted from 1978/01/01
+	LD	DE,1978
+	LD	(DATEY),DE
+	LD	A,1
+	LD	(DATEM),A
+	LD	(DATED),A
+	
+	; 1978 was not a leap year
+	LD	DE,365
+	LD	(DATEYLEN),DE
+	LD	A,28
+	LD	(MONTHLENS+1),A
+	XOR	A
+	LD	(DATEYLEAP),A
+	; Next leap year in two years
+	LD	A,2
+	LD	(DATELEAPCNT),A
+	; Next century in 31 leap years (skip 2000)
+	LD	A,31
+	LD	(DATECENTCNT),A
+	
+	; Count the years
+	LD	DE,(DATEYLEN)
+DAYSTOYMD2:
+	OR	A
+	SBC	HL,DE
+	JR	Z,DAYSTOYMD3
+	JR	C,DAYSTOYMD3
+	CALL	ADVYEAR
+	JR	DAYSTOYMD2
+DAYSTOYMD3:
+	ADD	HL,DE
+	
+	; Count the months
+	CALL	GETMONTHLENGTH
+DAYSTOYMD4:
+	OR	A
+	SBC	HL,DE
+	JR	Z,DAYSTOYMD5
+	JR	C,DAYSTOYMD5
+	CALL	ADVMONTH
+	JR	DAYSTOYMD4
+DAYSTOYMD5:
+	ADD	HL,DE
+	
+	; Anything left over is the day number
+	LD	A,L
+	LD	(DATED),A
+	RET
+
+ADVYEAR:
+	LD	DE,(DATEY)
+	INC	DE
+	LD	(DATEY),DE
+	LD	A,(DATELEAPCNT)
+	DEC	A
+	JR	Z,ADVYEARLEAP
+	; Normal year
+	LD	(DATELEAPCNT),A
+	XOR	A
+	LD	(DATEYLEAP),A
+	LD	DE,365
+	LD	(DATEYLEN),DE
+	LD	A,28
+	LD	(MONTHLENS+1),A
+	RET
+ADVYEARLEAP:
+	LD	A,4
+	LD	(DATELEAPCNT),A
+	LD	A,(DATECENTCNT)
+	DEC	A
+	JR	Z,ADVYEARCENT
+	; Non-century leap year (or 2000)
+	LD	(DATECENTCNT),A
+	LD	DE,366
+	LD	(DATEYLEN),DE
+	LD	A,29
+	LD	(MONTHLENS+1),A
+	RET
+ADVYEARCENT:
+	LD	A,25
+	LD	(DATECENTCNT),A
+	LD	DE,365
+	RET
+
+ADVMONTH:
+	LD	A,(DATEM)
+	INC	A
+	CP	13
+	JR	NZ,ADVMONTH1
+	CALL	ADVYEAR
+	LD	A,1
+ADVMONTH1:
+	LD	(DATEM),A
+	; Fall-through
+
+GETMONTHLENGTH:
+	PUSH	HL
+	LD	A,(DATEM)
+	LD	E,A
+	LD	D,0
+	LD	HL,MONTHLENS-1
+	ADD	HL,DE
+	LD	A,(HL)
+	LD	(DATEMLEN),A
+	LD	E,A
+	POP	HL
+	RET
+MONTHLENS:
+	DEFB	31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+
+DATEYLEN:
+	DEFW	365
+DATEYLEAP:
+	DEFB	0
+DATELEAPCNT:	; Number of years until next leap year
+	DEFB	2
+DATECENTCNT:	; Number of leap years until next century year (skip 2000)
+	DEFB	31
+DATEMLEN:
+	DEFB	31
+
+DATEY:
+	DEFW	1978
+DATEM:
+	DEFB	1
+DATED:
+	DEFB	1
