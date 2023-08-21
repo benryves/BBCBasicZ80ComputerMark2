@@ -63,6 +63,11 @@ INIT:	CALL	INTIME		;INITIALISE TIMER
 	LD	DE,3*(4-1) ; CONOUT = function 4.
 	ADD	HL,DE
 	LD	(VDU+1),HL
+	
+	LD DE,3*(30-4) ; USERF = function 30.
+	ADD	HL,DE
+	LD	(USERF+1),HL
+	
 	CALL	MODECHG
 	JP	START
 ;
@@ -87,6 +92,9 @@ BYE:
 	RST	0
 ;
 VDU: ; Raw output via CONOUT address retrieved from BIOS jump table
+	JP 0
+;
+USERF: ; USERF BIOS routine
 	JP 0
 ;
 ;INTIME - Initialise CTC to interrupt every 10 ms.
@@ -575,8 +583,6 @@ OSNEWL:
 ; OSBYTE:
 OSBYTE:
 	PUSH	AF
-	POP	BC
-
 	CP	15
 	JR	NZ,OSBYTENOFLUSH
 	PUSH	HL
@@ -586,51 +592,19 @@ OSBYTEFLUSH:
 	JR	C,OSBYTEFLUSH
 	POP	HL
 OSBYTENOFLUSH:
-	
-	IN	A,(1)	; Dummy read to clear write queue
-	LD	A,B
-	OUT	(1),A	; Command
-	LD	A,L
-	OUT	(1),A	; X (LSB)
-	LD	A,H
-	OUT	(1),A	; Y (MSB)
-	LD	A,C
-	OUT	(1),A	; Status
-	IN	A,(1)	; Command
-	LD	B,A
-	IN	A,(1)	; X
-	LD	L,A
-	IN	A,(1)	; Y
-	LD	H,A
-	IN	A,(1)	; Status
-	LD	C,A
-	PUSH	BC
 	POP	AF
+	PUSH	BC
+	LD	BC,0FFF4H
+	CALL	USERF
+	POP	BC
 	RET
 ;
 ; OSWORD:
 OSWORD:
-	PUSH	AF
-	POP	BC
-	IN	A,(2)	; Dummy read to clear write queue
-	LD	A,B
-	OUT	(2),A	; Command
-	LD	A,L
-	OUT	(2),A	; X (LSB)
-	LD	A,H
-	OUT	(2),A	; Y (MSB)
-	LD	A,C
-	OUT	(2),A	; Status
-	IN	A,(2)	; Command
-	LD	B,A
-	IN	A,(2)	; X
-	LD	L,A
-	IN	A,(2)	; Y
-	LD	H,A
-	IN	A,(2)	; Status
-	LD	C,A
 	PUSH	BC
-	POP	AF
+	LD	BC,0FFF1H
+	CALL	USERF
+	POP	BC
 	RET
 ;
 TIME:	DEFS	4
