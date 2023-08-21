@@ -773,6 +773,8 @@ DEC1:
 	RET	Z
 	CP	','
 	RET	Z
+	CP	'.'
+	RET	Z
 	; Parse the value.
 	CP	'0'
 	JP	C,HUH
@@ -1813,62 +1815,139 @@ GETIMSDT1:
 ; Destroys: A,D,E,H,L,F
 ;
 PUTIMS:
-	LD	A,CR
+	; Ignore empty strings.
+	LD	A,E
+	OR	A
+	JP	Z,HUH
+
+	; Preserve the string length whilst we fetch the current date and time.
+	PUSH	DE
+	
+	; Fetch the current date and time
+	LD	C,105
+	LD	DE,SYSDATE
+	CALL	BDOS
+	LD	(SYSTIMES),A
+	
+	; Add a NUL terminator and set HL to point at the string accumulator.
+	POP	DE
+	XOR	A
 	LD	(DE),A
 	LD	HL,ACCS
-	CALL	DEC
+
+PUTIMSNEXT:
+	; Does the component contain a colon? If so, parse it as a time.
+	PUSH	HL
+	LD	B,E
+PUTIMSTYPE:
+	LD	A,(HL)
+	CP	':'
+	JR	Z,PUTIMST
+	CP	'.'
+	JR	Z,PUTIMSD
+	CP	','
+	JR	Z,PUTIMSD
+	INC	HL
+	DJNZ	PUTIMSTYPE
+PUTIMSD:
+	POP	HL
+	; Parse data at HL (maximum length E) as a date
 	
-	LD	A,D
-	OR	A
-	JP	NZ,HUH
+	; Does it start with a number?
+	LD	A,(HL)
+	CP	'0'
+	JR	C,PUTMSWKD
+	CP	'9'+1
+	JR	NC,PUTMSWKD
+
+PUTMSDD:
+	; Date starts with a number,so parse as DMY
+	
+	PUSH	DE
+	PUSH	HL
+	
+	CALL	DEC
 	LD	A,E
 	LD	(DATED),A
+	CALL	SKIPSP
 	
-	CALL	DEC
-	LD	A,D
-	OR	A
-	JP	NZ,HUH
-	LD	A,E
+	LD	E,3
+	CALL	READMONTH
 	LD	(DATEM),A
 	
 	CALL	DEC
 	LD	(DATEY),DE
 	
+	; How far have we moved HL? Update E to match.
+	POP	BC
+	POP	DE
+	
+	PUSH	HL
+	
+	OR	A
+	SBC	HL,BC
+	LD	A,E
+	SUB	L
+	LD	E,A
+	
+	PUSH	DE
+	
 	; Convert the YMD parameters to a date
+	
 	CALL	YMDTODAYS
 	JP	C,HUH
-	
-	; Store the date
 	LD	(SYSDATE),HL
 	
-	; Display the date number
-	LD	DE,ACCS
-	LD	HL,0
-	EXX
-	LD	HL,(SYSDATE)
-	EXX
-	LD	C,0
-	LD	A,37
-	PUSH	IX
-	LD	IX,G9-1
-	CALL	FPP
-	POP	IX
+	POP	DE
+	POP	HL
 	
-	LD	B,E
-	LD	HL,ACCS
-	CALL	PTEXT
+	JR	PUTIMSFINDNEXT
+
+PUTMSWKD:
+	; It's not a number. It may be a day of the week.	
+	CALL	READDAYOFWEEK
+	; We don't care about the day of the week, as it's not stored.
+	JR	PUTIMSFINDNEXT
+
+PUTIMST:
+	POP	HL
+	; Parse data at HL (maximum length E) as a time
 	
-	LD	A,'='
-	CALL	OSWRCH
+	CALL	READBCD
+	LD	(SYSTIMEH),A
+	CALL	COLON
+	CALL	READBCD
+	LD	(SYSTIMEM),A
+	CALL	COLON
+	CALL	READBCD
+	LD	(SYSTIMES),A
+
+PUTIMSFINDNEXT:
+
+	LD	A,E
+	OR	E
+	JR	Z,PUTIMSPARSED
 	
-	; Convert system date back to a string
-	CALL	SYSDATETOSTR
+	; Read the separator.
+	LD	A,(HL)
+	INC	HL
+	DEC	E
+	CP	' '
+	JR	Z,PUTIMSFINDNEXT
 	
-	LD	B,E
-	LD	HL,ACCS
-	CALL	PTEXT
-	CALL	CRLF
-	
+	; Only try again if there's a . or , between the components.
+	CP	'.'
+	JR	Z,PUTIMSNEXT
+	CP	','
+	JP	Z,PUTIMSNEXT
+	JP HUH
+
+PUTIMSPARSED:
+
+	; Write the new date to the system.
+	LD	C,104
+	LD	DE,SYSDATE
+	CALL	BDOS
 	RET
 
 ;
@@ -1891,6 +1970,148 @@ APPENDBCD1:
 	ADD	A,'0'
 	LD	(DE),A
 	INC	DE
+	RET
+;
+; READBCD - Read a BCD-encoded numeric value from an ASCII string.
+;   Inputs: HL points to string to read value from.
+;           E = Maximum string length.
+;  Outputs: A = BCD-encoded value from the ASCII string.
+;           HL is advanced to point past the value.
+;           E is decremented.
+; Destroys: A, D, F
+READBCD:
+	LD	A,E
+	CP	2
+	JP	C,HUH
+	XOR	A
+	CALL	READBCD1
+	; Fall-through
+READBCD1:
+	LD	D,A
+	LD	A,(HL)
+	SUB	'0'
+	JP	C,HUH
+	CP	'9'+1
+	JP	NC,HUH
+	INC	HL
+	DEC	E
+	SLA	D
+	SLA	D
+	SLA	D
+	SLA	D
+	ADD	A,D
+	RET
+;
+; READCOLON - Read a colon from an ASCII string.
+;   Inputs: HL points to string to read the colon from.
+;           E = Maximum string length.
+;  Outputs: HL is advanced to point past the colon.
+;           E is decremented.
+; Destroys: A, F
+COLON:
+	LD	A,E
+	CP	1
+	JP	C,HUH
+	LD	A,(HL)
+	CP	':'
+	JP	NZ,HUH
+	INC	HL
+	DEC	E
+	RET
+;
+; READDAYOFWEEK - Reads the day of the week from an ASCII string.
+;   Inputs: HL points to string to read the day of the week from.
+;  Outputs: A day of the week index (0=Saturday).
+;           HL points to the point in the string after the day of the week.
+; DEstroys: A, F.
+READDAYOFWEEK:
+	PUSH	IX
+	PUSH	BC
+	LD	IX,DAYNAMES
+	LD	B,7
+	CALL	READABBR
+	POP	BC
+	POP	IX
+	JP	C,HUH
+	RET
+;
+; READMONTH - Reads the month from an ASCII string.
+;   Inputs: HL points to string to read the month from.
+;  Outputs: A month number (1-12).
+;           HL points to the point in the string after the day of the week.
+; DEstroys: A, F.
+READMONTH:
+	PUSH	IX
+	PUSH	BC
+	LD	IX,MONTHNAMES
+	LD	B,12
+	CALL	READABBR
+	POP	BC
+	POP	IX
+	JP	C,HUH
+	INC	A
+	RET
+;
+; READABBR - Read an abbreviated (3-lettered term) from a string.
+;   Inputs: HL points to string to read the abbreviation from.
+;           E = Maximum string length.
+;           B = Maximum number of abbreviated terms.
+;           IX points to the list of abbreviations
+;  Outputs: HL is advanced to point past the abbreviation.
+;           E is decremented.
+;           A is the index of the abbreviation in the list of abbreviations.
+; Destroys: A, B, C, F, IX,
+READABBR:
+	LD	A,E
+	CP	3
+	RET	C
+	
+	LD	C,0
+ABBRLOOP:
+	CALL	CHECKABBR
+	JR	NC,ABBRFOUND
+	INC	C
+	DJNZ	ABBRLOOP
+	SCF
+	RET
+ABBRFOUND:
+	LD	B,3
+ABBRADV:
+	INC	HL
+	DEC	E
+	DJNZ	ABBRADV
+	LD	A,C
+	OR	A
+	RET
+;
+; CHECKABBR - Checks a single abbreviation (3-lettered term).
+;   Inputs: HL points to the string to check.
+;           IX points to the abbreviation to check.
+;  Outputs: Carry reset if a match was found, set if there was no match.
+;           IX points to the next abbreviation to check.
+; Destroys: A, F
+CHECKABBR:
+	PUSH	HL
+	PUSH	BC
+	LD	B,3
+CHECKABBR1:
+	LD	A,(IX)
+	XOR	(HL)
+	AND	0DFh
+	JR	NZ,CHECKABBR2
+	INC	IX
+	INC HL
+	DJNZ	CHECKABBR1
+	POP	BC
+	POP	HL
+	XOR	A
+	RET
+CHECKABBR2:
+	INC	IX
+	DJNZ	CHECKABBR2
+	POP	BC
+	POP	HL
+	SCF
 	RET
 
 DAYNAMES:
