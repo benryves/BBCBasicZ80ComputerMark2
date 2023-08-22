@@ -47,6 +47,7 @@ CONH	EQU	1Ch
 	PUBLIC	POINT
 	PUBLIC	ENVEL
 	PUBLIC	SOUND
+	PUBLIC	ADVAL
 	PUBLIC	OSBYTE
 	PUBLIC	OSWORD
 	PUBLIC	OSNEWL
@@ -567,6 +568,27 @@ SOUND1:
 	JR	SOUND1
 SOUNDARGS:
 	DS	8
+;
+; ADVAL - Read analogue-digital convertor etc:
+ADVAL:
+	CALL	EXPRI
+	EXX
+
+	LD	A,128
+	CALL	OSBYTE
+	
+	; Convert HL (result) to HLH'L'
+	LD	A,H
+	EXX
+	ADD	A,A
+	SBC	A,A
+	LD	H,A
+	LD	L,A
+	
+	; C = 0 for integer
+	XOR	A
+	LD	C,A
+	RET
 ;
 ; OSASCI: Write character but turn CR into CRLF
 OSASCI:
