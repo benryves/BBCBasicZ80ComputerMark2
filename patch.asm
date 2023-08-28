@@ -75,21 +75,6 @@ INIT:	CALL	INTIME		;INITIALISE TIMER
 ;REBOOT - Stop interrupts and return to CP/M. 
 ;
 BYE:
-	; Restore the original ISR.
-	DI
-	LD	HL,(OLDISR0)
-	LD	(39H),HL
-
-	; Disable timer interrupts.
-	IN	A,(30H)
-	RES	6,A
-	OUT	(30H),A
-	
-	; Acknowledge any outstanding interrupts just in case.
-	LD	A,40H
-	OUT	(31H),A
-
-	EI
 	RST	0
 ;
 VDU: ; Raw output via CONOUT address retrieved from BIOS jump table
@@ -101,78 +86,46 @@ USERF: ; USERF BIOS routine
 ;INTIME - Initialise CTC to interrupt every 10 ms.
 ;Also set time to zero.
 ;
-INTIME:	DI
-
-	; Patch the ISR.
-	LD	HL,(39H)
-	LD	(OLDISR0),hl
-	LD	(OLDISR1),hl
-	LD	HL,ISR
-	LD	(39H),hl
-	
-	; Enable timer interrupts.
-	IN	A,(30H)
-	SET	6,A
-	OUT	(30H),A
-
-	; Reset timer.
-	LD	HL,0
-	LD	(TIME),HL
-	LD	(TIME+2),HL
-	EI
+INTIME:
 	RET
-;
-;TIMER - Interrupt service routine.
-;Increments elapsed-time clock 100 times per second.
-;
-ISR:	PUSH	AF
-
-	; Is it a timer interrupt?
-	IN	A,(31H)
-	BIT	6,A
-	JR	Z,TIMER
-	POP	AF
-DEFC	OLDISR0	=	$+1
-	JP	0
-
-TIMER:
-	; Acknowledge timer interrupt.
-	LD	A,40H
-	OUT	(31H),A
-	
-	PUSH	BC
-	PUSH	HL
-	LD	HL,TIME
-	LD	B,4
-UPT1:	INC	(HL)
-	JR	NZ,EXIT
-	INC	HL
-	DJNZ	UPT1
-EXIT:	POP	HL
-	POP	BC
-	POP	AF
-DEFC	OLDISR1	=	$+1
-	JP	0
 ;
 ;GTIME - Read elapsed-time clock.
 ;  Outputs: DEHL = elapsed time (centiseconds)
 ; Destroys: A,D,E,H,L,F
 ;
-GETIME:	DI
+GETIME:
+	CALL	READTIME
 	LD	HL,(TIME)
 	LD	DE,(TIME+2)
-	EI
 	RET
+;
+;READTIME - Read elapsed-time clock from hardware into local TIME variable.
+;  Outputs: TIME = elapsed time (centiseconds)
+; Destroys: A,H,L,F
+;
+READTIME:
+	LD	HL,TIME
+	LD	A,1
+	JP	OSWORD
 ;
 ;PUTIME - Load elapsed-time clock.
 ;   Inputs: DEHL = time to load (centiseconds)
 ; Destroys: A,D,E,H,L,F
 ;
-PUTIME:	DI
+PUTIME:
 	LD	(TIME),HL
 	LD	(TIME+2),DE
-	EI
+	CALL	WRITETIME
 	RET
+;
+;WRITETIME - Writes elapsed-time clock from local TIME variable to hardware.
+;   Inputs: TIME = elapsed time (centiseconds)
+; Destroys: A,H,L,F
+;
+WRITETIME:
+	LD	HL,TIME
+	LD	A,2
+	JP	OSWORD
 ;
 ;CLRSCN - Clear screen.
 ; Destroys: A,D,E,H,L,F
@@ -204,9 +157,16 @@ GETKEY:
 	OR	L
 	RET	Z		;TIME-OUT
 	PUSH	HL
+	CALL	READTIME
 	LD	HL,TIME
 	LD	A,(HL)
-WAIT1:	CP	(HL)
+WAIT1:
+	PUSH	AF
+	PUSH	HL
+	CALL	READTIME
+	POP	HL
+	POP	AF
+	CP	(HL)
 	JR	Z,WAIT1		;WAIT FOR 10 ms.
 	POP	HL
 	DEC	HL
@@ -629,7 +589,7 @@ OSWORD:
 	POP	BC
 	RET
 ;
-TIME:	DEFS	4
+TIME:	DEFS	5
 ;
 ; WRITESCB: Write CP/M system control block.
 WRITESCB:
