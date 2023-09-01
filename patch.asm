@@ -499,6 +499,7 @@ ENVELARGS:
 ;
 ; SOUND: Make a sound
 SOUND:
+	; Collect the four SOUND arguments
 	LD	IX,SOUNDARGS
 	PUSH	IX
 	CALL	EXPRI
@@ -523,13 +524,28 @@ SOUND0:
 	INC	IX
 	DJNZ	SOUND0
 SOUND1:
-	LD	A,7
-	LD	HL,SOUNDARGS
-	OR	A
-	CALL	OSWORD
-	JP	NC,XEQ
+	; Check whether the sound buffer has some space in it.
+	LD	A,(SOUNDARGS)
+	AND	3
+	NEG
+	SUB	5
+	LD	L,A
+	LD	H,-1
+	LD	A,128
+	CALL	OSBYTE
+	; Are there 0 bytes free in the sound buffer?
+	LD	A,L
+	OR	H
+	JR	NZ,SOUND2
+	; Zero bytes free, so check for Esc then loop.
 	CALL	TRAP
 	JR	SOUND1
+SOUND2:
+	; Send the SOUND command via OSWORD
+	LD	A,7
+	LD	HL,SOUNDARGS
+	CALL	OSWORD
+	JP	XEQ
 SOUNDARGS:
 	DS	8
 ;
